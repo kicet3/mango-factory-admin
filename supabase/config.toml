@@ -1,0 +1,10 @@
+project_id = "zcxknllsrqipcrkffdla"
+[functions.upload-to-s3]
+verify_jwt = true
+
+[functions.download-from-s3]
+verify_jwt = true
+
+[functions.request-format-recommendation]
+
+[functions.request-generation]
