@@ -327,12 +327,12 @@ export default function MaterialManagementV2() {
       const formData = new FormData();
       formData.append('file', uploadedFile);
 
+      // 필수 파라미터 - content_name은 이제 필수입니다
+      formData.append('content_name', newMaterialName.trim());
+
       // 선택적 파라미터
-      if (newMaterialName) {
-        formData.append('content_name', newMaterialName);
-      }
-      if (newMaterialDescription) {
-        formData.append('description', newMaterialDescription);
+      if (newMaterialDescription && newMaterialDescription.trim()) {
+        formData.append('description', newMaterialDescription.trim());
       }
 
       // 기본 설정
@@ -633,7 +633,9 @@ export default function MaterialManagementV2() {
 
             {/* 자료 이름 */}
             <div className="space-y-2">
-              <Label htmlFor="material-name">자료 이름</Label>
+              <Label htmlFor="material-name">
+                자료 이름 <span className="text-red-500">*</span>
+              </Label>
               <Input
                 id="material-name"
                 value={newMaterialName}
@@ -641,6 +643,7 @@ export default function MaterialManagementV2() {
                 placeholder="예: 1학기 중간고사 대비 자료"
                 className="rounded-lg"
                 disabled={isProcessing}
+                required
               />
             </div>
 
