@@ -31,8 +31,18 @@ interface ConversionItem {
   success: boolean;
   total_components: number;
   total_slides: number;
-  generation_time: number;
+  generation_time: number | null;
   created_at: string;
+  lesson_title?: string | null;
+  activity_type?: string[] | null;
+  lesson_style?: string[] | null;
+  competency?: string[] | null;
+  lesson_intro?: string | null;
+  status?: string;
+  progress?: number;
+  current_step?: string | null;
+  error_message?: string | null;
+  job_id?: string | null;
 }
 
 interface ConversionsResponse {
@@ -469,88 +479,169 @@ export default function MaterialManagementV2() {
             {searchTerm ? '검색 결과가 없습니다.' : '등록된 자료가 없습니다.'}
           </div>
         ) : (
-          filteredConversions.map((conversion) => (
-            <Card
-              key={conversion.id}
-              className="border-border shadow-card rounded-2xl overflow-hidden hover:shadow-lg transition-shadow h-[500px] flex flex-col"
-            >
-              {/* 썸네일 */}
-              <div className="h-48 flex-shrink-0 bg-gradient-to-br from-mango-green-soft to-mango-green-light flex items-center justify-center relative">
-                <div className="text-mango-green text-6xl font-bold opacity-20">
-                  {conversion.original_filename.charAt(0).toUpperCase()}
-                </div>
-                {conversion.success && (
+          filteredConversions.map((conversion) => {
+            // 상태별 배지 색상
+            const getStatusBadge = () => {
+              switch(conversion.status) {
+                case 'completed':
+                  return <Badge className="bg-green-500 text-white rounded-full">완료</Badge>;
+                case 'pending':
+                  return <Badge className="bg-yellow-500 text-white rounded-full">대기중</Badge>;
+                case 'processing':
+                  return <Badge className="bg-blue-500 text-white rounded-full">처리중</Badge>;
+                case 'failed':
+                  return <Badge className="bg-red-500 text-white rounded-full">실패</Badge>;
+                default:
+                  return conversion.success ? (
+                    <Badge className="bg-green-500 text-white rounded-full">변환 완료</Badge>
+                  ) : null;
+              }
+            };
+
+            return (
+              <Card
+                key={conversion.id}
+                className="border-border shadow-card rounded-2xl overflow-hidden hover:shadow-lg transition-shadow h-[550px] flex flex-col"
+              >
+                {/* 썸네일 */}
+                <div className="h-40 flex-shrink-0 bg-gradient-to-br from-mango-green-soft to-mango-green-light flex items-center justify-center relative">
+                  <div className="text-mango-green text-5xl font-bold opacity-20">
+                    {(conversion.lesson_title || conversion.content_name || conversion.original_filename).charAt(0).toUpperCase()}
+                  </div>
                   <div className="absolute top-3 right-3">
-                    <Badge className="bg-green-500 text-white rounded-full">
-                      변환 완료
+                    {getStatusBadge()}
+                  </div>
+                </div>
+
+                {/* 내용 */}
+                <CardHeader className="flex-shrink-0 pb-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <CardTitle className="text-lg line-clamp-1">
+                      {conversion.lesson_title || conversion.content_name || conversion.original_filename}
+                    </CardTitle>
+                    <Badge variant="secondary" className="rounded-full flex-shrink-0 text-xs">
+                      {conversion.framework}
                     </Badge>
                   </div>
-                )}
-              </div>
 
-              {/* 내용 */}
-              <CardHeader className="flex-shrink-0">
-                <div className="flex items-start justify-between">
-                  <CardTitle className="text-lg line-clamp-1">
-                    {conversion.content_name || conversion.original_filename}
-                  </CardTitle>
-                  <Badge variant="secondary" className="rounded-full flex-shrink-0">
-                    {conversion.framework}
-                  </Badge>
-                </div>
-                {conversion.description && (
-                  <p className="text-sm text-muted-foreground mt-2 line-clamp-2">
-                    {conversion.description}
-                  </p>
-                )}
-              </CardHeader>
+                  {/* 활동 유형 및 스타일 */}
+                  {(conversion.activity_type || conversion.lesson_style) && (
+                    <div className="flex flex-wrap gap-1 mt-2">
+                      {conversion.activity_type?.map((type, idx) => (
+                        <Badge key={idx} variant="outline" className="rounded-full text-xs">
+                          {type}
+                        </Badge>
+                      ))}
+                      {conversion.lesson_style?.map((style, idx) => (
+                        <Badge key={idx} variant="outline" className="rounded-full text-xs bg-blue-50">
+                          {style}
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
 
-              <CardContent className="flex-1 flex flex-col justify-between space-y-4">
+                  {/* 역량 */}
+                  {conversion.competency && conversion.competency.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-2">
+                      {conversion.competency.map((comp, idx) => (
+                        <Badge key={idx} className="bg-purple-100 text-purple-700 rounded-full text-xs">
+                          {comp}
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
 
-                <div className="space-y-2">
-                  <div className="flex gap-2">
+                  {/* 소개 또는 설명 */}
+                  {(conversion.lesson_intro || conversion.description) && (
+                    <p className="text-sm text-muted-foreground mt-2 line-clamp-2">
+                      {conversion.lesson_intro || conversion.description}
+                    </p>
+                  )}
+                </CardHeader>
+
+                <CardContent className="flex-1 flex flex-col justify-between space-y-3">
+                  {/* 진행률 (processing 상태일 때만) */}
+                  {conversion.status === 'processing' && conversion.progress != null && (
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-xs text-muted-foreground">
+                        <span>{conversion.current_step || '처리 중...'}</span>
+                        <span>{conversion.progress}%</span>
+                      </div>
+                      <Progress value={conversion.progress} className="h-1.5" />
+                    </div>
+                  )}
+
+                  {/* 에러 메시지 */}
+                  {conversion.status === 'failed' && conversion.error_message && (
+                    <div className="bg-red-50 border border-red-200 rounded-lg p-2">
+                      <p className="text-xs text-red-600 line-clamp-2">{conversion.error_message}</p>
+                    </div>
+                  )}
+
+                  {/* 통계 정보 */}
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div className="bg-muted/50 rounded-lg p-2">
+                      <p className="text-muted-foreground">컴포넌트</p>
+                      <p className="font-semibold">{conversion.total_components}개</p>
+                    </div>
+                    <div className="bg-muted/50 rounded-lg p-2">
+                      <p className="text-muted-foreground">슬라이드</p>
+                      <p className="font-semibold">{conversion.total_slides}개</p>
+                    </div>
+                  </div>
+
+                  {/* 액션 버튼 */}
+                  <div className="space-y-2">
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handlePreview(conversion.id)}
+                        className="flex-1 rounded-full"
+                        disabled={conversion.status === 'processing' || conversion.status === 'pending'}
+                      >
+                        <Eye className="w-4 h-4 mr-1" />
+                        미리보기
+                      </Button>
+                      <Button
+                        variant="default"
+                        size="sm"
+                        onClick={() => handleEdit(conversion.id)}
+                        className="flex-1 rounded-full bg-mango-green hover:bg-mango-green/90"
+                        disabled={conversion.status === 'processing' || conversion.status === 'pending'}
+                      >
+                        <Edit className="w-4 h-4 mr-1" />
+                        수정하기
+                      </Button>
+                    </div>
                     <Button
-                      variant="outline"
+                      variant="destructive"
                       size="sm"
-                      onClick={() => handlePreview(conversion.id)}
-                      className="flex-1 rounded-full"
+                      onClick={() => handleDelete(conversion.id, conversion.lesson_title || conversion.content_name || conversion.original_filename)}
+                      className="w-full rounded-full"
                     >
-                      <Eye className="w-4 h-4 mr-1" />
-                      미리보기
-                    </Button>
-                    <Button
-                      variant="default"
-                      size="sm"
-                      onClick={() => handleEdit(conversion.id)}
-                      className="flex-1 rounded-full bg-mango-green hover:bg-mango-green/90"
-                    >
-                      <Edit className="w-4 h-4 mr-1" />
-                      수정하기
+                      <Trash2 className="w-4 h-4 mr-1" />
+                      삭제
                     </Button>
                   </div>
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    onClick={() => handleDelete(conversion.id, conversion.original_filename)}
-                    className="w-full rounded-full"
-                  >
-                    <Trash2 className="w-4 h-4 mr-1" />
-                    삭제
-                  </Button>
-                </div>
 
-                <div className="text-xs text-muted-foreground">
-                  생성일: {new Date(conversion.created_at).toLocaleDateString('ko-KR', {
-                    year: 'numeric',
-                    month: 'long',
-                    day: 'numeric',
-                    hour: '2-digit',
-                    minute: '2-digit'
-                  })}
-                </div>
-              </CardContent>
-            </Card>
-          ))
+                  {/* 생성 정보 */}
+                  <div className="text-xs text-muted-foreground space-y-1">
+                    <p>
+                      생성일: {new Date(conversion.created_at).toLocaleDateString('ko-KR', {
+                        year: 'numeric',
+                        month: 'long',
+                        day: 'numeric'
+                      })}
+                    </p>
+                    {conversion.generation_time && (
+                      <p>변환 시간: {conversion.generation_time.toFixed(1)}초</p>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })
         )}
       </div>
 

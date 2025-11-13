@@ -16,6 +16,7 @@ import MaterialManagementV2 from "./pages/admin/MaterialManagementV2";
 import VisualEditor from "./pages/admin/VisualEditor";
 import VisualEditorV2 from "./pages/admin/VisualEditorV2";
 import WixStyleEditor from "./pages/admin/WixStyleEditor";
+import CraftJsEditor from "./pages/admin/CraftJsEditor";
 import MaterialPreview from "./pages/admin/MaterialPreview";
 import ImageManagement from "./pages/admin/ImageManagement";
 import UserManagement from "./pages/admin/UserManagement";
@@ -38,6 +39,11 @@ const App = () => (
             <Route path="/admin/materials-v2/editor/:id" element={
               <ProtectedRoute>
                 <WixStyleEditor />
+              </ProtectedRoute>
+            } />
+            <Route path="/admin/materials-v2/craftjs-editor/:id" element={
+              <ProtectedRoute>
+                <CraftJsEditor />
               </ProtectedRoute>
             } />
             <Route path="/admin/materials-v2/preview/:id" element={

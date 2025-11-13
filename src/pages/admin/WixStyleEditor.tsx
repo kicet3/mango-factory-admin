@@ -224,7 +224,8 @@ export default function WixStyleEditor() {
         const componentMap = new Map<string, { code: string; id: number; propDataType: any }>();
         if (data.components && data.components.length > 0) {
           data.components.forEach((comp: any) => {
-            const fullCode = comp.imports && comp.imports.length > 0
+            // imports가 null이거나 빈 배열이면 코드만 사용
+            const fullCode = comp.imports && Array.isArray(comp.imports) && comp.imports.length > 0
               ? `${comp.imports.join('\n')}\n\n${comp.code}`
               : comp.code;
             componentMap.set(comp.component_name, {
@@ -232,7 +233,7 @@ export default function WixStyleEditor() {
               id: comp.id,
               propDataType: comp.prop_data_type
             });
-            console.log(`📦 컴포넌트 등록: ${comp.component_name} (ID: ${comp.id}, ${fullCode.length} chars)`);
+            console.log(`📦 컴포넌트 등록: ${comp.component_name} (ID: ${comp.id}, 코드: ${fullCode?.length || 0} chars)`);
           });
         }
 
@@ -242,13 +243,17 @@ export default function WixStyleEditor() {
             const layoutComponent = slide.layout_component;
             const matched = componentMap.get(layoutComponent);
 
+            // slide.data는 그대로 사용 (백엔드가 { data: { slides: [...] } } 형식으로 반환)
+            const slideData = slide.data || {};
+
             console.log(`📄 슬라이드 ${index + 1}: layout_component="${layoutComponent}" → 컴포넌트 ID=${matched?.id}, 코드 길이=${matched?.code.length || 0}`);
+            console.log(`   데이터 구조:`, slideData);
 
             return {
               id: index + 1,
               name: `페이지 ${index + 1}`,
               reactCode: matched?.code || '', // layout_component와 매칭된 React 코드
-              jsonData: JSON.stringify(slide.data, null, 2),
+              jsonData: JSON.stringify(slideData, null, 2), // slide.data를 그대로 사용
               componentId: matched?.id, // 컴포넌트 ID 저장
               slideId: slide.id, // 슬라이드 ID 저장
               propDataType: matched?.propDataType // prop_data_type 저장
@@ -256,15 +261,15 @@ export default function WixStyleEditor() {
           });
 
           console.log('📚 생성된 페이지 수:', newPages.length);
-          console.log('📄 첫 번째 페이지 JSON 데이터:', newPages[0].jsonData);
+          console.log('📄 첫 번째 페이지 JSON 데이터:', newPages[0]?.jsonData);
 
           isLoadingPageRef.current = true;
           setPages(newPages);
           setCurrentPageId(1);
-          setReactCode(newPages[0].reactCode);
-          setJsonData(newPages[0].jsonData);
-          setCurrentComponentId(newPages[0].componentId || null);
-          setPropDataType(newPages[0].propDataType || null);
+          setReactCode(newPages[0]?.reactCode || '');
+          setJsonData(newPages[0]?.jsonData || '{}');
+          setCurrentComponentId(newPages[0]?.componentId || null);
+          setPropDataType(newPages[0]?.propDataType || null);
 
           setTimeout(() => {
             isLoadingPageRef.current = false;
@@ -496,8 +501,11 @@ export default function WixStyleEditor() {
   // JSON 데이터 파싱
   const parsedData = React.useMemo(() => {
     try {
-      return JSON.parse(jsonData);
-    } catch {
+      const parsed = JSON.parse(jsonData);
+      console.log('📊 파싱된 데이터:', parsed);
+      return parsed;
+    } catch (error) {
+      console.error('❌ JSON 파싱 실패:', error);
       return {};
     }
   }, [jsonData]);
@@ -623,8 +631,8 @@ export default function WixStyleEditor() {
             (function() {
               try {
                 console.log('Starting render...');
-                const data = ${JSON.stringify(parsedData)};
-                console.log('Data loaded:', data);
+                const propsData = ${JSON.stringify(parsedData)};
+                console.log('Props data loaded:', propsData);
 
                 ${processedCode}
 
@@ -634,25 +642,34 @@ export default function WixStyleEditor() {
                 const rootElement = document.getElementById('root');
                 console.log('Root element:', rootElement);
 
+                // props 전달 (parsedData가 이미 { data: { slides: [...] } } 형태이므로 그대로 전달)
                 const root = ReactDOM.createRoot(rootElement);
-                root.render(React.createElement(${componentName}, { data: data }));
+                root.render(React.createElement(${componentName}, propsData));
 
-                console.log('Render initiated');
+                console.log('Render initiated with props:', propsData);
 
                 // 편집 가능한 요소에 ID 추가 및 드래그 기능
                 setTimeout(() => {
                   console.log('Adding element IDs and drag functionality...');
-                  const allDivs = document.querySelectorAll('div');
+
+                  // 모든 편집 가능한 요소 찾기 (div, img, p, span, button 등)
+                  const editableSelectors = 'div, img, p, span, button, h1, h2, h3, h4, h5, h6, section, article';
+                  const allElements = document.querySelectorAll(editableSelectors);
                   let elementIndex = 0;
 
-                  allDivs.forEach((div) => {
-                    if (div.id !== 'root' && div.id !== 'error-display') {
-                      div.setAttribute('data-element-id', 'element-' + elementIndex);
-                      div.classList.add('editable-element');
-                      elementIndex++;
+                  allElements.forEach((element) => {
+                    // root와 error-display는 제외
+                    if (element.id === 'root' || element.id === 'error-display') return;
+
+                    // 이미 ID가 있는 요소는 건너뛰기
+                    if (element.hasAttribute('data-element-id')) return;
+
+                    element.setAttribute('data-element-id', 'element-' + elementIndex);
+                    element.classList.add('editable-element');
+                    elementIndex++;
 
                       // 클릭 이벤트 및 크기 조절 핸들 추가
-                      div.addEventListener('click', (e) => {
+                      element.addEventListener('click', (e) => {
                         e.stopPropagation();
 
                         // 기존 선택 해제
@@ -662,7 +679,7 @@ export default function WixStyleEditor() {
                           el.querySelectorAll('.resize-handle').forEach(h => h.remove());
                         });
 
-                        div.classList.add('selected');
+                        element.classList.add('selected');
 
                         // 크기 조절 핸들 추가
                         const handles = ['nw', 'n', 'ne', 'w', 'e', 'sw', 's', 'se'];
@@ -670,12 +687,12 @@ export default function WixStyleEditor() {
                           const handle = document.createElement('div');
                           handle.className = \`resize-handle \${pos}\`;
                           handle.setAttribute('data-position', pos);
-                          div.appendChild(handle);
+                          element.appendChild(handle);
                         });
 
                         window.parent.postMessage({
                           type: 'ELEMENT_SELECTED',
-                          elementId: div.getAttribute('data-element-id')
+                          elementId: element.getAttribute('data-element-id')
                         }, '*');
                       });
 
@@ -690,7 +707,7 @@ export default function WixStyleEditor() {
                       let initialWidth = 0;
                       let initialHeight = 0;
 
-                      div.addEventListener('mousedown', (e) => {
+                      element.addEventListener('mousedown', (e) => {
                         const target = e.target;
 
                         // 리사이즈 핸들 클릭
@@ -701,7 +718,7 @@ export default function WixStyleEditor() {
                           startX = e.clientX;
                           startY = e.clientY;
 
-                          const style = window.getComputedStyle(div);
+                          const style = window.getComputedStyle(element);
                           initialLeft = parseInt(style.left) || 0;
                           initialTop = parseInt(style.top) || 0;
                           initialWidth = parseInt(style.width) || 0;
@@ -713,19 +730,19 @@ export default function WixStyleEditor() {
                         }
 
                         // 일반 드래그 (요소가 선택되어 있고 핸들이 아닌 경우)
-                        if (!div.classList.contains('selected')) return;
+                        if (!element.classList.contains('selected')) return;
 
                         isDragging = true;
                         startX = e.clientX;
                         startY = e.clientY;
 
-                        const style = window.getComputedStyle(div);
+                        const style = window.getComputedStyle(element);
                         initialLeft = parseInt(style.left) || 0;
                         initialTop = parseInt(style.top) || 0;
 
                         // position이 static이면 absolute로 변경
                         if (style.position === 'static' || style.position === 'relative') {
-                          div.style.position = 'absolute';
+                          element.style.position = 'absolute';
                         }
 
                         e.preventDefault();
@@ -739,36 +756,36 @@ export default function WixStyleEditor() {
                         if (isResizing) {
                           // 크기 조절
                           if (resizeDirection.includes('e')) {
-                            div.style.width = (initialWidth + deltaX) + 'px';
+                            element.style.width = (initialWidth + deltaX) + 'px';
                           }
                           if (resizeDirection.includes('w')) {
-                            div.style.width = (initialWidth - deltaX) + 'px';
-                            div.style.left = (initialLeft + deltaX) + 'px';
+                            element.style.width = (initialWidth - deltaX) + 'px';
+                            element.style.left = (initialLeft + deltaX) + 'px';
                           }
                           if (resizeDirection.includes('s')) {
-                            div.style.height = (initialHeight + deltaY) + 'px';
+                            element.style.height = (initialHeight + deltaY) + 'px';
                           }
                           if (resizeDirection.includes('n')) {
-                            div.style.height = (initialHeight - deltaY) + 'px';
-                            div.style.top = (initialTop + deltaY) + 'px';
+                            element.style.height = (initialHeight - deltaY) + 'px';
+                            element.style.top = (initialTop + deltaY) + 'px';
                           }
                         } else if (isDragging) {
                           // 위치 이동
                           const newLeft = initialLeft + deltaX;
                           const newTop = initialTop + deltaY;
 
-                          div.style.left = newLeft + 'px';
-                          div.style.top = newTop + 'px';
+                          element.style.left = newLeft + 'px';
+                          element.style.top = newTop + 'px';
                         }
                       });
 
                       document.addEventListener('mouseup', (e) => {
                         if (isDragging || isResizing) {
-                          const style = window.getComputedStyle(div);
+                          const style = window.getComputedStyle(element);
 
                           window.parent.postMessage({
                             type: isResizing ? 'ELEMENT_RESIZED' : 'ELEMENT_MOVED',
-                            elementId: div.getAttribute('data-element-id'),
+                            elementId: element.getAttribute('data-element-id'),
                             left: style.left,
                             top: style.top,
                             width: style.width,
@@ -780,7 +797,6 @@ export default function WixStyleEditor() {
                         isResizing = false;
                         resizeDirection = '';
                       });
-                    }
                   });
 
                   console.log('Total editable elements:', elementIndex);
@@ -902,7 +918,7 @@ export default function WixStyleEditor() {
   };
 
   // 드래그로 이동된 위치를 React 코드에 반영
-  const updateReactCodePosition = (elementId: string, left: string, top: string) => {
+  const updateReactCodePosition = async (elementId: string, left: string, top: string) => {
     const elementIndex = parseInt(elementId.replace('element-', ''));
     if (isNaN(elementIndex)) return;
 
@@ -951,10 +967,13 @@ export default function WixStyleEditor() {
 
     const updatedCode = lines.join('\n');
     setReactCode(updatedCode);
+
+    // 백엔드에 자동 저장
+    await saveToBackend(updatedCode);
   };
 
   // 크기와 위치를 함께 React 코드에 반영
-  const updateReactCodeSizeAndPosition = (elementId: string, left: string, top: string, width: string, height: string) => {
+  const updateReactCodeSizeAndPosition = async (elementId: string, left: string, top: string, width: string, height: string) => {
     const elementIndex = parseInt(elementId.replace('element-', ''));
     if (isNaN(elementIndex)) return;
 
@@ -1005,6 +1024,52 @@ export default function WixStyleEditor() {
 
     const updatedCode = lines.join('\n');
     setReactCode(updatedCode);
+
+    // 백엔드에 자동 저장
+    await saveToBackend(updatedCode);
+  };
+
+  // 백엔드에 코드 저장 (공통 함수)
+  const saveToBackend = async (updatedCode: string) => {
+    if (!id || id === 'new' || !currentComponentId) return;
+
+    try {
+      const headers = await getAuthHeaders();
+
+      console.log('💾 레이아웃 변경사항 자동 저장 중:', {
+        conversionId: id,
+        componentId: currentComponentId,
+        codeLength: updatedCode.length
+      });
+
+      const params = new URLSearchParams({
+        modified_code: updatedCode
+      });
+
+      const url = `${API_BASE_URL}/conversions/${id}/components/${currentComponentId}/code?${params}`;
+      console.log('📡 PATCH 요청 URL:', url.substring(0, 200) + '...');
+      console.log('📡 modified_code 길이:', updatedCode.length);
+      console.log('📡 URL 전체 길이:', url.length);
+
+      const response = await fetch(url, {
+        method: 'PATCH',
+        headers,
+        mode: 'cors',
+      });
+
+      console.log('📡 응답 상태:', response.status, response.statusText);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.log('❌ 응답 에러 내용:', errorText);
+        throw new Error(`서버 오류: ${response.status}`);
+      }
+
+      console.log('✅ 레이아웃 변경사항 자동 저장 완료');
+    } catch (error: any) {
+      console.error('❌ Auto-save error:', error);
+      // 에러 토스트는 표시하지 않음 (백그라운드 저장이므로)
+    }
   };
 
   // S3/백엔드에서 이미지 목록 가져오기
@@ -1168,7 +1233,23 @@ export default function WixStyleEditor() {
         );
 
         if (!response.ok) {
-          throw new Error(`서버 오류: ${response.status} ${response.statusText}`);
+          const errorText = await response.text();
+          console.error('❌ 백엔드 에러 응답:', errorText);
+
+          let errorMessage = `서버 오류: ${response.status} ${response.statusText}`;
+          try {
+            const errorJson = JSON.parse(errorText);
+            if (errorJson.detail) {
+              errorMessage = `서버 오류: ${errorJson.detail}`;
+            }
+          } catch (e) {
+            // JSON 파싱 실패 시 원본 텍스트 사용
+            if (errorText) {
+              errorMessage = `서버 오류: ${errorText}`;
+            }
+          }
+
+          throw new Error(errorMessage);
         }
 
         result = await response.json();
@@ -1205,8 +1286,9 @@ export default function WixStyleEditor() {
         setChatMessages(prev => [...prev, assistantMessage]);
 
       } else {
-        // 코드 수정 모드: /code 엔드포인트 사용
+        // 코드 수정 모드: /code 엔드포인트 사용 (FormData만 사용)
         const formData = new FormData();
+        formData.append('code', reactCode);  // 현재 코드 추가
         formData.append('user_request', userRequest);
         formData.append('preserve_functionality', 'true');
 
@@ -1216,14 +1298,16 @@ export default function WixStyleEditor() {
           console.log('📎 파일 첨부:', uploadedFile.name);
         }
 
-        console.log('🤖 AI 코드 수정 요청:', {
+        console.log('🤖 AI 코드 수정 요청 (FormData):', {
           conversionId: id,
           componentId: currentComponentId,
           request: userRequest,
-          hasFile: !!uploadedFile
+          codeLength: reactCode.length,
+          hasFile: !!uploadedFile,
+          preserve_functionality: true
         });
 
-        // FormData는 Content-Type을 자동으로 설정하므로 헤더에서 제외
+        // FormData는 Content-Type을 자동으로 설정하므로 헤더에 추가하지 않음
         const headers: HeadersInit = {};
         if (session?.access_token) {
           headers['Authorization'] = `Bearer ${session.access_token}`;
@@ -1240,15 +1324,41 @@ export default function WixStyleEditor() {
         );
 
         if (!response.ok) {
-          throw new Error(`서버 오류: ${response.status} ${response.statusText}`);
+          const errorText = await response.text();
+          console.error('❌ 백엔드 에러 응답:', errorText);
+
+          let errorMessage = `서버 오류: ${response.status} ${response.statusText}`;
+          try {
+            const errorJson = JSON.parse(errorText);
+            if (errorJson.detail) {
+              errorMessage = `서버 오류: ${errorJson.detail}`;
+            }
+          } catch (e) {
+            // JSON 파싱 실패 시 원본 텍스트 사용
+            if (errorText) {
+              errorMessage = `서버 오류: ${errorText}`;
+            }
+          }
+
+          throw new Error(errorMessage);
         }
 
         result = await response.json();
         console.log('✅ AI 코드 수정 결과:', result);
 
         // 응답에서 수정된 코드 추출
-        const modifiedCode = result.modified_code || result.code || '';
-        const summary = result.summary || '코드가 수정되었습니다.';
+        // 백엔드 응답이 객체일 수도 있고 직접 문자열일 수도 있음
+        let modifiedCode = '';
+        let summary = '코드가 수정되었습니다.';
+
+        if (typeof result === 'string') {
+          modifiedCode = result;
+        } else if (result && typeof result === 'object') {
+          modifiedCode = result.modified_code || result.code || result.generated_code || '';
+          summary = result.summary || result.message || '코드가 수정되었습니다.';
+        }
+
+        console.log('📝 추출된 코드 길이:', modifiedCode.length);
 
         // 수정된 코드를 현재 페이지에 반영
         if (modifiedCode) {
@@ -1263,14 +1373,18 @@ export default function WixStyleEditor() {
               : page
           ));
 
-          toast.success('코드가 성공적으로 수정되었습니다!');
+          // AI가 생성한 코드를 DB에 자동 저장
+          console.log('💾 AI 생성 코드를 DB에 자동 저장 중...');
+          await saveToBackend(modifiedCode);
+
+          toast.success('코드가 성공적으로 수정되고 저장되었습니다!');
         }
 
         // AI 응답 메시지 추가
         const assistantMessage: ChatMessage = {
           id: `assistant-${Date.now()}`,
           role: 'assistant',
-          content: `✅ ${summary}\n\n변경 사항이 코드에 적용되었습니다.`,
+          content: `✅ ${summary}\n\n변경 사항이 코드에 적용되고 저장되었습니다.`,
           timestamp: Date.now()
         };
 
@@ -1443,11 +1557,20 @@ export default function WixStyleEditor() {
         );
 
         if (!response.ok) {
+          const errorText = await response.text();
+          console.log('❌ 응답 에러 내용:', errorText);
           throw new Error(`서버 오류: ${response.status} ${response.statusText}`);
         }
 
-        const result = await response.json();
-        console.log('✅ 서버 코드 저장 완료:', result);
+        // 응답이 있는 경우에만 JSON 파싱
+        let result = null;
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+          result = await response.json();
+          console.log('✅ 서버 코드 저장 완료:', result);
+        } else {
+          console.log('✅ 서버 코드 저장 완료 (응답 없음)');
+        }
 
         setHasUnsavedChanges(false);
         toast.success('코드가 서버에 저장되었습니다!');
@@ -1513,19 +1636,28 @@ export default function WixStyleEditor() {
 
   // 저장 버튼 - 변경사항을 실제로 적용
   const saveStyleChanges = async () => {
+    console.log('🔵 saveStyleChanges 호출됨');
+    console.log('editingStyles:', editingStyles);
+    console.log('selectedElementId:', selectedElementId);
+    console.log('id:', id);
+    console.log('currentComponentId:', currentComponentId);
+
     if (!editingStyles || !selectedElementId) {
       toast.error('저장할 변경사항이 없습니다');
+      console.log('❌ 조건 실패: editingStyles 또는 selectedElementId 없음');
       return;
     }
 
     const element = getSelectedElement();
     if (!element) {
       toast.error('요소를 찾을 수 없습니다');
+      console.log('❌ 조건 실패: 요소를 찾을 수 없음');
       return;
     }
 
     if (!id || id === 'new') {
       toast.error('저장된 자료만 업데이트할 수 있습니다.');
+      console.log('❌ 조건 실패: id가 없거나 new');
       return;
     }
 
@@ -1537,16 +1669,18 @@ export default function WixStyleEditor() {
 
       if (!updatedCode) {
         toast.error('코드 업데이트에 실패했습니다.');
+        console.log('❌ 조건 실패: updateReactCodeBatch 반환값 없음');
         return;
       }
 
-      console.log('React 코드 업데이트 완료');
+      console.log('✅ React 코드 업데이트 완료');
 
       // 2. 서버에 저장
       const headers = await getAuthHeaders();
 
       if (!currentComponentId) {
         toast.error('컴포넌트 ID를 찾을 수 없습니다.');
+        console.log('❌ 조건 실패: currentComponentId 없음');
         return;
       }
 
@@ -1556,26 +1690,40 @@ export default function WixStyleEditor() {
         codeLength: updatedCode.length
       });
 
-      // PATCH 요청으로 modified_code 전달 (AI 편집과 동일한 방식)
+      // PATCH 요청으로 modified_code를 쿼리 파라미터로 전달
       const params = new URLSearchParams({
         modified_code: updatedCode
       });
 
-      const response = await fetch(
-        `${API_BASE_URL}/conversions/${id}/components/${currentComponentId}/code?${params}`,
-        {
-          method: 'PATCH',
-          headers,
-          mode: 'cors',
-        }
-      );
+      const url = `${API_BASE_URL}/conversions/${id}/components/${currentComponentId}/code?${params}`;
+      console.log('📡 PATCH 요청 URL:', url.substring(0, 200) + '...');
+      console.log('📡 modified_code 길이:', updatedCode.length);
+      console.log('📡 URL 전체 길이:', url.length);
+      console.log('📡 Headers:', headers);
+
+      const response = await fetch(url, {
+        method: 'PATCH',
+        headers,
+        mode: 'cors',
+      });
+
+      console.log('📡 응답 상태:', response.status, response.statusText);
 
       if (!response.ok) {
+        const errorText = await response.text();
+        console.log('❌ 응답 에러 내용:', errorText);
         throw new Error(`서버 오류: ${response.status} ${response.statusText}`);
       }
 
-      const result = await response.json();
-      console.log('✅ 서버 저장 완료:', result);
+      // 응답이 있는 경우에만 JSON 파싱
+      let result = null;
+      const contentType = response.headers.get('content-type');
+      if (contentType && contentType.includes('application/json')) {
+        result = await response.json();
+        console.log('✅ 서버 저장 완료:', result);
+      } else {
+        console.log('✅ 서버 저장 완료 (응답 없음)');
+      }
 
       // 3. iframe이 자동으로 재렌더링됨 (useEffect의 reactCode 의존성)
       toast.success('변경사항이 저장되었습니다');
@@ -1585,7 +1733,7 @@ export default function WixStyleEditor() {
       setEditingStyles(null);
 
     } catch (error: any) {
-      console.error('Save error:', error);
+      console.error('❌ Save error:', error);
       toast.error(error.message || '저장 중 오류가 발생했습니다');
     }
   };
@@ -1606,16 +1754,20 @@ export default function WixStyleEditor() {
     let updated = false;
     let dataBindingKey: string | null = null;
 
+    console.log('🔍 총 라인 수:', lines.length);
+    console.log('🔍 찾는 element index:', elementIndex);
+
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
 
-      // <div> 또는 <img> 태그 찾기
-      const isDiv = line.includes('<div') && !line.trim().startsWith('//') && !line.trim().startsWith('/*');
-      const isImg = line.includes('<img') && !line.trim().startsWith('//') && !line.trim().startsWith('/*');
+      // <div> 또는 <img> 태그 찾기 (JSX와 React.createElement 모두 지원)
+      const isDiv = (line.includes('<div') || line.includes("'div'")) && !line.trim().startsWith('//') && !line.trim().startsWith('/*');
+      const isImg = (line.includes('<img') || line.includes("'img'")) && !line.trim().startsWith('//') && !line.trim().startsWith('/*');
 
       if (isDiv || isImg) {
+        console.log(`🔍 발견한 div/img (count: ${divCount}, index: ${i}):`, line.substring(0, 100));
         if (divCount === elementIndex) {
-          console.log('Found target element at line', i, ':', line);
+          console.log('✅ Found target element at line', i, ':', line);
 
           // 이미지 태그인 경우 src 속성 업데이트
           if (isImg && styles.imageSrc) {
@@ -1771,9 +1923,12 @@ export default function WixStyleEditor() {
     }
 
     console.log('=== 코드 업데이트 완료 ===');
+    console.log('updated 플래그:', updated);
 
-    // 업데이트된 코드 반환
-    return updated ? updatedCode : null;
+    // 업데이트된 코드를 항상 반환 (updated 플래그와 관계없이)
+    // 로컬 state는 이미 setReactCode로 업데이트되었으므로
+    // 현재 reactCode를 반환하여 서버에 저장
+    return updatedCode;
   };
 
   // React 코드에서 해당 요소의 속성을 업데이트
